@@ -54,13 +54,13 @@
 1. 用标题行里的红字「（x分）」定位每道题的起点；
 2. 用浅灰页脚「单选题 | 易 … 共享试题」判断这道题在画面里是否完整；
 3. 深色正文的首尾就是题干第一行和最后一行选项，上下各留一点白裁出来；
-4. 下一屏的位置按「下一道题的标题行」实时计算，所以题目高矮不齐也不会错位或漏题。
+4. 用标题行的「题目N」当唯一键去重，并把「第一道还没保存的题」顶到画面固定位置，
+   所以题目高矮不齐也不会错位或漏题；文件名直接就是题目编号（`273.png`）。
 
 **文字是怎么处理的**：
 
 - 按「题干 / 每个选项 / 每个小问」合并成段落，段与段之间空一行；
-- 公式片段统一用 `$...$` 包起来（后续交给 pandoc / Word 就是公式对象），并按文件名标注 `_formula`；
-- 同一道题重复截到时用缩略图指纹去重。
+- 公式片段统一用 `$...$` 包起来（后续交给 pandoc / Word 就是公式对象），并按文件名标注 `_formula`。
 
 ---
 
@@ -142,7 +142,7 @@ python main.py capture -t 选择题 # 只截某一种题型
 python main.py ocr              # 只做文字提取
 python main.py word             # 只生成 Word
 python main.py check            # 只打印产物统计
-python main.py probe            # 调试：截整屏、打印题卡位置
+python main.py probe            # 调试：截整屏、打印题卡位置和题目编号
 ```
 
 `capture` 会在每个题型开始前停下等回车（脚本只会往下截）：
@@ -152,6 +152,12 @@ python main.py probe            # 调试：截整屏、打印题卡位置
 ```
 
 题型列表与顺序写在 `main.py` 顶部的 `PNG_TYPES` 里，按自己的试卷改即可。
+
+> `pages` 是题量上限（默认 10）。试卷题量很大时记得给够，例如
+> `python main.py capture -p 600`；不够会在截到上限时停下，日志里会提示 `已达到 pages=N`。
+
+> 截图过程会实时打印「已保存 选择题\273.png」「编号从 273 直接跳到 275，中间可能有题没截到」
+> 这类信息，跑完还会汇总保存数量和跳过的题号，方便对照检查。
 
 ### 方式二：Notebook（`main.ipynb`）
 
@@ -179,12 +185,12 @@ python main.py probe            # 调试：截整屏、打印题卡位置
 ```
 resources/
 ├── row_pngs/                 ① 题目截图（每张一道题，宽 1600）
-│   ├── 选择题/1.png
+│   ├── 选择题/273.png
 │   ├── 分析题/1.png
 │   └── …
 ├── row_txt/                  ② 识别出的文字
-│   ├── 选择题/1.txt          无公式
-│   ├── 选择题/5_formula.txt  含公式（公式片段用 $...$ 标出）
+│   ├── 选择题/273.txt          无公式
+│   ├── 选择题/275_formula.txt  含公式（公式片段用 $...$ 标出）
 │   └── …
 └── word_output/              ③ 题库文档
     ├── 选择题题库.docx
@@ -192,7 +198,8 @@ resources/
     └── …
 ```
 
-- 三个目录用**同一套编号**：`row_pngs/选择题/5.png` ↔ `row_txt/选择题/5_formula.txt` ↔ Word 里的「第5题」；
+- 文件名就是**试卷里的题目编号**（题目 273 → `273.png` / `273.txt` / Word 里的「第273题」），三个目录一一对应；
+- 编号不连续就说明中间有题没截到，日志里会有 `编号从 N 直接跳到 M` 的提示；
 - 含公式的题在 Word 里是**题目原图**（等比缩放铺满正文宽度），因为公式文字 OCR 不可靠；
 - 不含公式的题是**可编辑文字**，每个选项单独一段；
 - `row_txt` 里带 `_formula` 后缀的题，就是需要重点核对的那批。
@@ -226,7 +233,7 @@ D 都不会
 | `CARD_TOP_MARGIN` / `CARD_BOTTOM_MARGIN` | `30` / `52` | 裁图时题干上方、选项下方的留白（虚拟机像素） |
 | `CARD_SAFE_TOP` | `130` | 画面顶部被 App 标题栏挡住的高度 |
 | `TARGET_HEADER_TOP` | `220` | 翻页后希望下一题标题行停在的位置 |
-| `SAME_RATIO` | `0.015` | 去重阈值：两张题卡差异像素比例低于它就算同一题 |
+| `SAME_RATIO` | `0.008` | 兜底去重阈值：只有「题目N」读不出来时才用指纹比较 |
 | `TESSERACT_PATH` | 本机 Tesseract 路径 | OCR 可执行文件路径 |
 | `TESSERACT_LANG` / `TESSERACT_CONFIG` | `chi_sim+eng` / `--psm 6` | OCR 语言与版面模式 |
 | `OCR_FORMULA_SUFFIX` | `_formula` | 含公式的 txt 文件名后缀 |
@@ -240,11 +247,24 @@ D 都不会
 ## 常见问题
 
 **Q：截图位置不对、漏题、切到半道题？**
-先跑 `python main.py probe` 看整屏和识别到的题卡位置。常见原因：
+先跑 `python main.py probe` 看整屏、题卡位置和读出来的题目编号。常见原因：
 
 - 画面顶部标题栏更高/更矮 → 调 `CARD_SAFE_TOP`；
 - 翻页后题目位置偏移 → 调 `TARGET_HEADER_TOP`；
 - 留白不合心意 → 调 `CARD_TOP_MARGIN` / `CARD_BOTTOM_MARGIN`。
+
+**Q：文件名为什么不是从 1 开始，而是 273 这种？**
+文件名就是试卷里的**题目编号**。这样跳过的题、换题型的题都不会让后面的编号错位，
+`row_pngs` / `row_txt` / Word 三处也能一一对应。如果发现编号不连续，说明中间有题没截到，
+日志里会有 `编号从 N 直接跳到 M` 的提示。
+
+**Q：日志里出现「第N题一屏放不下，已跳过」？**
+这道题比一屏还高（正文超过约 620px），程序不会硬截成两张，而是跳过并在结束时列出题号，
+需要你手动补截。想改这个行为可以看 `GetScreenshot.save()` 里 `TALL_RATIO` 那一段。
+
+**Q：跑到一半提示「连续 3 帧画面没有变化，判定已经到底」？**
+滑动可能被吞掉了（虚拟机卡顿、窗口失焦等）。程序会先重试一次再判定，如果确实还有题，
+多半是模拟器页面不在试卷列表上；点一下模拟器画面再跑一次即可。
 
 **Q：提示「没找到 adb，改用鼠标截图 + 拖拽」？**
 把 `const.ADB_PATH` 填成模拟器自带 `adb.exe` 的绝对路径（MuMu 在 `…\MuMuPlayer\nx_device\15.0\shell\adb.exe`）。鼠标兜底能跑，但要求窗口不被遮挡、位置准确。
@@ -339,7 +359,8 @@ Sciyardcampus_file_export/
 │       ├── tools/
 │       │   ├── emulator_screen.py # 虚拟机窗口 / 屏幕坐标适配（鼠标兜底用）
 │       │   ├── android_device.py  # adb 截图与滑动、鼠标拖拽兜底
-│       │   └── question_card.py   # 题卡识别、裁剪、去重指纹
+│       │   ├── question_card.py   # 题卡识别、裁剪、去重指纹、读题目编号
+│       │   └── ocr.py             # Tesseract 薄封装（读正文、读标题行编号）
 │       ├── datapreparation/
 │       │   ├── screenshot.py      # GetScreenshot：截图流水线
 │       │   └── text_extraction.py # TextExtraction：OCR 流水线
@@ -355,8 +376,9 @@ Sciyardcampus_file_export/
 |---|---|---|
 | `EmulatorScreen` | 虚拟机画面与屏幕坐标换算、窗口自动探测、DPI 感知 | `window_box()`、`scale()`、`to_screen()` |
 | `AndroidDevice` | 截图与滑动：优先 adb，失败或无 adb 时退回鼠标 | `capture()`、`swipe()`、`adb_swipe()`、`drag()` |
-| `Card` / `QuestionCard` | 从整屏帧里认出每道题、裁剪、生成去重指纹 | `split()`、`crop()`、`fingerprint()` |
-| `GetScreenshot` | 截图主流程：截屏 → 切题 → 去重 → 存图 → 翻页 | `save()`、`probe()`、`next_scroll()` |
+| `Ocr` | Tesseract 薄封装，统一可执行文件路径 | `prepare()`、`text()` |
+| `Card` / `QuestionCard` | 从整屏帧里认出每道题、裁剪、读编号、生成去重指纹 | `split()`、`crop()`、`header_number()`、`fingerprint()` |
+| `GetScreenshot` | 截图主流程：截屏 → 切题 → 按编号去重 → 存图 → 对齐翻页 | `save()`、`probe()`、`first_unsaved()`、`target_scroll()` |
 | `TextExtraction` | OCR 主流程：识别 → 分段 → 公式标记 → 写 txt | `save()`、`write()`、`mark_math()` |
 | `WordBuilder` | 按题型合成 Word：公式题贴图、纯文本题转段落 | `save()`、`build()`、`add_picture()` |
 
@@ -367,9 +389,11 @@ AndroidDevice.capture()  ──► PIL.Image（1600×900 帧）
         │
 QuestionCard.split()     ──► [Card(header_top, top, bottom, footer), …]
         │
-QuestionCard.crop()      ──► 题卡图 ──► resources/row_pngs/<题型>/N.png
+QuestionCard.header_number() ──► 题目编号（去重、命名的唯一键）
         │
-TextExtraction.write()   ──► resources/row_txt/<题型>/N[_formula].txt
+QuestionCard.crop()      ──► 题卡图 ──► resources/row_pngs/<题型>/<题号>.png
+        │
+TextExtraction.write()   ──► resources/row_txt/<题型>/<题号>[_formula].txt
         │
 WordBuilder.build()      ──► resources/word_output/<题型>题库.docx
 ```
@@ -400,9 +424,10 @@ WordBuilder.build()      ──► resources/word_output/<题型>题库.docx
 
 1. **公式 OCR 不保证准确**：斜体变量、上下标容易认错，所以含公式的题在 Word 中以图片呈现，并在 txt 文件名上标注 `_formula`；
 2. **依赖这套页面版式**：需要「题目N（x分）」红色标题行 + 浅灰「单选题 | 易 … 共享试题」页脚；
-3. **比一屏还高的题会被跳过**（会打印提示）；
-4. **只支持 Windows**：用到了 Win32 的 DPI 感知、窗口客户区接口；
-5. **题型切换需要手动**：截图只会往下走，每个题型开始前需要把试卷滑到该题型开头。
+3. **比一屏还高的题会被跳过**：正文超过约 620px 的题截不成一张完整图，程序会跳过并在结束时列出题号，需要手动补截；
+4. **题目编号依赖标题行 OCR**：编号读不出来时会用「上一题编号 + 1」暂存并打警告，编号不连续时日志里会提示跳号；
+5. **只支持 Windows**：用到了 Win32 的 DPI 感知、窗口客户区接口；
+6. **题型切换需要手动**：截图只会往下走，每个题型开始前需要把试卷滑到该题型开头。
 
 ## 许可证
 
