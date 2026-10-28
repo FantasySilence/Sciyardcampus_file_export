@@ -6,11 +6,14 @@
 # ================================================================== #
 # @Description: 从整屏画面里识别并裁出"一道题"                         #
 # ================================================================== #
+import re
+
 import numpy as np
 from PIL import Image
-from typing import List, NamedTuple, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 from src.common import const
+from src.modules.tools.ocr import Ocr
 
 
 class Card(NamedTuple):
@@ -135,6 +138,33 @@ class QuestionCard:
                 )
             )
         return cards
+
+    @staticmethod
+    def header_number(frame: Image.Image, card: Card) -> Optional[int]:
+
+        """
+        从标题行读出题目编号（题目273 -> 273），读不出来返回 None
+
+        编号是截图的唯一键：编号不同就是不同的题，不再靠图像相似度猜
+        """
+
+        crop = frame.crop((
+            0,
+            max(0, card.header_top - 4),
+            min(frame.size[0], 430),
+            min(frame.size[1], card.header_top + 34),
+        ))
+        text = Ocr.text(crop, config="--psm 7")
+
+        # ------ 优先认"题目N"，认不出再退回第一个数字（并排除"(1分)"里的 1） ------ #
+        match = re.search(r"题\s*目\s*(\d{1,3})", text)
+        if match is None:
+            numbers = re.findall(r"\d{1,3}", text)
+            numbers = [item for item in numbers if len(item) > 1]
+            if not numbers:
+                return None
+            return int(numbers[0])
+        return int(match.group(1))
 
     @staticmethod
     def crop(frame: Image.Image, card: Card) -> Image.Image:

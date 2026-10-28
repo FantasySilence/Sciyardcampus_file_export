@@ -9,14 +9,13 @@
 import os
 import re
 import glob
-import shutil
-import pytesseract
 from PIL import Image
 from typing import List, Optional, Tuple
 
 from src.common import const
 from src.common.filesio import FilesIO
 from src.common.figuresio import FiguresIO
+from src.modules.tools.ocr import Ocr
 
 
 class TextExtraction:
@@ -62,16 +61,10 @@ class TextExtraction:
     def prepare():
 
         """
-        找到 tesseract.exe：先看 const 里写的路径，再退回 PATH
+        找到 tesseract.exe（交给 Ocr 统一处理）
         """
 
-        path = const.TESSERACT_PATH if os.path.exists(const.TESSERACT_PATH) else shutil.which("tesseract")
-        if path is None:
-            raise RuntimeError(
-                "没找到 Tesseract，请先安装（含 chi_sim 语言包），"
-                "再把 const.TESSERACT_PATH 指到 tesseract.exe"
-            )
-        pytesseract.pytesseract.tesseract_cmd = path
+        Ocr.prepare()
 
     @staticmethod
     def types() -> List[str]:
@@ -204,7 +197,7 @@ class TextExtraction:
                 Image.LANCZOS,
             )
 
-        text = pytesseract.image_to_string(image, lang=const.TESSERACT_LANG, config=const.TESSERACT_CONFIG)
+        text = Ocr.text(image, lang=const.TESSERACT_LANG, config=const.TESSERACT_CONFIG)
 
         has_math = False
         paragraphs: List[str] = []
