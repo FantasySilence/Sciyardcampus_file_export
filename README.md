@@ -1,0 +1,2 @@
+# Sciyardcampus_file_export
+用于从手机端将数苑校园的题库到处到本地
