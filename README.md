@@ -112,6 +112,9 @@ python main.py probe
    - `PATH` 里的 `adb`
    - `const.ADB_CANDIDATES` 里的 MuMu 常见路径（如 `…\MuMuPlayer\nx_device\15.0\shell\adb.exe`）
 
+> **每次重启虚拟机后**，adb 里的设备连接会失效，截图会失败——先执行一次 `adb connect 127.0.0.1:16384`。
+> 细节见[常见问题](#常见问题)里的「虚拟机重启后截图失败」。
+
 **为什么推荐 MuMu**
 
 - 自带 `adb`，不用再装 Android SDK；
@@ -245,6 +248,41 @@ D 都不会
 
 **Q：提示「没找到 adb，改用鼠标截图 + 拖拽」？**
 把 `const.ADB_PATH` 填成模拟器自带 `adb.exe` 的绝对路径（MuMu 在 `…\MuMuPlayer\nx_device\15.0\shell\adb.exe`）。鼠标兜底能跑，但要求窗口不被遮挡、位置准确。
+
+**Q：虚拟机重启后截图失败，`adb devices` 是空的？**
+
+这是最常见的问题。MuMu 12 的 adb 走 TCP（默认端口 **16384**），虚拟机重启后 adb server 里那条旧连接
+失效了，但 `MuMuNxDevice` 和 adb server 进程都还在——于是 `adb devices` 为空，脚本调
+`adb exec-out screencap` 就报 `no devices/emulators found` 或 `device offline`。
+
+手动连一下即可（用 MuMu 自带的 adb，就是 `ADB_CANDIDATES` 里那个路径）：
+
+```powershell
+# 进到 MuMu 自带 adb 所在目录（版本号随安装而定）
+cd "…\MuMuPlayer\nx_device\15.0\shell"
+
+.\adb.exe connect 127.0.0.1:16384
+.\adb.exe devices
+#   List of devices attached
+#   127.0.0.1:16384    device
+```
+
+连接不上或显示 `offline` 时，重启 adb 服务再连（仍在上面那个目录里）：
+
+```powershell
+.\adb.exe kill-server
+.\adb.exe start-server
+.\adb.exe connect 127.0.0.1:16384
+```
+
+别的补充：
+
+- **多开**：端口按实例递增，第一台 `16384`、第二台 `16416`、第三台 `16448`…（MuMu 多开器里能看到）；
+- **报 `adb server version doesn't match`**：说明有别的 adb 抢了 5037 端口，先 `taskkill /IM adb.exe /F`，再只用 MuMu 自带的 adb；
+- **验证截图链路**：`adb shell screencap -p /sdcard/t.png` 再 `adb pull /sdcard/t.png .`，能拉出 1600×900 的图就正常；
+  注意别用 PowerShell 的 `>` 重定向保存 PNG，会把二进制写坏；
+- **想免掉这步手动操作**：在 `const.py` 里把 `ADB_SERIAL = "127.0.0.1:16384"` 固定下来（多开时锁定某一台），
+  或者在 `AndroidDevice.adb()` 里加一次「设备为空就自动 connect」的逻辑。
 
 **Q：滑动后页面飞出去很远 / 滑不动？**
 - 飞出去：`ADB_DURATION` 加大（比如 2000），松手太快会被识别成「甩」；
