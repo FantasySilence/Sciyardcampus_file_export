@@ -16,13 +16,22 @@ from src.common import const
 from src.common.filesio import FilesIO
 from src.common.figuresio import FiguresIO
 from src.modules.tools.ocr import Ocr
+from src.modules.tools.question_shape import QuestionShape
 
 
 class TextExtraction:
 
     """
     把 row_pngs/<题型>/N.png 识别成文字，存到 row_txt/<题型>/ 下：
-    没有公式的存 N.txt，有公式的存 N_formula.txt（一眼能挑出来核对）。
+
+        纯文字         -> N.txt
+        含公式         -> N_formula.txt
+        含表格         -> N_table.txt
+        含图像/图形    -> N_image.txt
+        同时有多个特征 -> 按 formula -> table -> image 拼起来，比如 N_formula_table.txt
+
+    这样一眼就能看出哪几道题 OCR 靠不住、需要对着原图核对，Word 那一步也是
+    按"文件名有没有后缀"来决定贴原图还是转成正文。
 
     识别用Tesseract（chi_sim+eng）：中文正文靠得住，
     但截图里的公式是斜体，变量和上下标容易被认错（Q_d 常被认成 O,，
@@ -183,14 +192,29 @@ class TextExtraction:
         return paragraph, found
 
     @staticmethod
-    def write(path: str, png_type: str, index: int) -> Tuple[bool, str]:
+    def kinds_of(name: str) -> List[str]:
 
         """
-        识别一张题图并写成 txt，返回 (这段文字里有没有公式, 文件名)
-        含公式的存成 1_formula.txt，不含的存成 1.txt
+        按文件名反推特征：1_formula_table.txt -> ['formula', 'table']
+        """
+
+        return [kind for kind in const.OCR_KIND_ORDER if const.OCR_KIND_SUFFIX[kind] in name]
+
+    @staticmethod
+    def write(path: str, png_type: str, index: int) -> Tuple[List[str], str]:
+
+        """
+        识别一张题图并写成 txt，返回 (特征标签, 文件名)
+
+        纯文字存 1.txt；含公式/表格/图像的分别存 1_formula.txt、1_table.txt、
+        1_image.txt，同时有多个特征时按 formula -> table -> image 拼起来
         """
 
         image = Image.open(path).convert("RGB")
+
+        # ------ 表格/图像看版面，用原始尺寸判断（阈值按 1600 宽标定） ------ #
+        shapes = QuestionShape.kinds(image)
+
         if const.OCR_SCALE != 1:
             image = image.resize(
                 (image.size[0] * const.OCR_SCALE, image.size[1] * const.OCR_SCALE),
@@ -206,23 +230,27 @@ class TextExtraction:
             has_math = has_math or found
             paragraphs.append(line)
 
-        # ------ 含公式的在文件名上标注，方便挑出来人工核对 ------ #
-        name = "%d%s.txt" % (index, const.OCR_FORMULA_SUFFIX) if has_math else "%d.txt" % index
+        # ------ 公式看文字，表格/图像看版面，合起来拼后缀 ------ #
+        kinds = (["formula"] if has_math else []) + shapes
+        suffix = "".join(const.OCR_KIND_SUFFIX[kind] for kind in const.OCR_KIND_ORDER if kind in kinds)
+
+        name = "%d%s.txt" % (index, suffix)
         target = FilesIO.loadText(name, png_type)
         with open(target, "w", encoding="utf-8") as file:
             file.write("\n\n".join(paragraphs) + "\n")
 
-        # ------ 同一道题上一次生成的另一种命名清掉，免得 1.txt 和 1_formula.txt 并存 ------ #
-        other = FilesIO.loadText(
-            "%d.txt" % index if has_math else "%d%s.txt" % (index, const.OCR_FORMULA_SUFFIX),
-            png_type,
-        )
-        if os.path.exists(other):
-            os.remove(other)
+        # ------ 这道题以前生成的其它命名清掉，免得新旧文件名并存 ------ #
+        folder = FilesIO.loadText(sub_dir=png_type)
+        olds = glob.glob(os.path.join(folder, "%d_*.txt" % index))
+        olds.append(os.path.join(folder, "%d.txt" % index))
+        for old in olds:
+            if os.path.exists(old) and os.path.basename(old) != name:
+                os.remove(old)
 
-        print("已保存 %s\\%s（%d 段%s）"
-              % (png_type, name, len(paragraphs), "，含公式" if has_math else ""))
-        return has_math, name
+        labels = {"formula": "含公式", "table": "含表格", "image": "含图像"}
+        note = "，".join(labels[kind] for kind in const.OCR_KIND_ORDER if kind in kinds)
+        print("已保存 %s\\%s（%d 段%s）" % (png_type, name, len(paragraphs), "，" + note if note else ""))
+        return kinds, name
 
     @staticmethod
     def save(png_type: Optional[str] = None, indexes: Optional[List[int]] = None):
@@ -253,11 +281,11 @@ class TextExtraction:
                     continue
                 if indexes is not None and index not in indexes:
                     continue
-                has_math, name = TextExtraction.write(path, kind, index)
-                if has_math:
+                kinds_of_question, name = TextExtraction.write(path, kind, index)
+                if kinds_of_question:
                     review.append("%s/%s" % (kind, name))
 
         if review:
-            print("[提示] 下面这些 txt 里有公式，OCR 对斜体变量容易认错，建议逐条核对：")
+            print("[提示] 下面这些 txt 标了公式/表格/图像，OCR 不一定认得准，建议对着原图逐条核对：")
             for item in review:
                 print("    " + item)
