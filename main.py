@@ -50,7 +50,7 @@ def extract_text(png_type=None):
 
     """
     提取文字：row_pngs/<题型>/N.png -> row_txt/<题型>/N.txt
-    含公式的存成 N_formula.txt
+    含公式/表格/图像的分别存成 N_formula.txt、N_table.txt、N_image.txt
     """
 
     TextExtraction.save(png_type=png_type)
@@ -86,12 +86,16 @@ def check():
         pngs = len([name for name in os.listdir(png_dir) if name.endswith(".png")]) if os.path.isdir(png_dir) else 0
 
         names = os.listdir(os.path.join(txt_root, kind))
-        formulas = [name for name in names if name.endswith(const.OCR_FORMULA_SUFFIX + ".txt")]
+        counts = {key: 0 for key in const.OCR_KIND_ORDER}
+        for name in names:
+            for feature in TextExtraction.kinds_of(name):
+                counts[feature] += 1
 
         docx = os.path.join(word_root, "%s%s.docx" % (kind, const.WORD_TITLE_SUFFIX))
 
-        print("%s：图片 %d 张，txt %d 份（含公式 %d），Word %s"
-              % (kind, pngs, len(names), len(formulas), "已生成" if os.path.exists(docx) else "未生成"))
+        print("%s：图片 %d 张，txt %d 份（公式 %d、表格 %d、图像 %d），Word %s"
+              % (kind, pngs, len(names), counts["formula"], counts["table"], counts["image"],
+                 "已生成" if os.path.exists(docx) else "未生成"))
 
     print()
     print("输出目录：")
