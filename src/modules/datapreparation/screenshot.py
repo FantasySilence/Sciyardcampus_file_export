@@ -112,22 +112,60 @@ class GetScreenshot:
         return False
 
     @staticmethod
+    def selection_ratio(frame) -> float:
+
+        """
+        画面里"文本被选中"的蓝色高亮占比
+        """
+
+        array = np.asarray(frame.convert("RGB")).astype(int)
+        red, blue = array[:, :, 0], array[:, :, 2]
+        return float(((blue > 180) & (blue - red > 40)).mean())
+
+    @staticmethod
+    def capture_clean(max_retry: int = 2):
+
+        """
+        截一张图；如果发现题干被选中（长按的后遗症），点一下空白处取消再重截
+        """
+
+        frame = AndroidDevice.capture()
+        for _ in range(max_retry):
+            if frame is None or GetScreenshot.selection_ratio(frame) <= const.SELECTION_RATIO:
+                return frame
+            print("[提示] 检测到文本被选中，点一下空白处取消")
+            AndroidDevice.tap(*const.SELECTION_TAP)
+            time.sleep(0.8)
+            frame = AndroidDevice.capture()
+
+        if frame is not None and GetScreenshot.selection_ratio(frame) > const.SELECTION_RATIO:
+            print("[警告] 文本仍处于选中状态，请手动点一下模拟器画面再继续")
+        return frame
+
+    @staticmethod
     def first_unsaved(frame, cards, numbers, saved_numbers, saved_images, skipped) -> Tuple[Optional[Card], Optional[int]]:
 
         """
         画面里第一道还没存下来的题（按编号跳过已存的、跳过的），没有就返回 (None, None)
+
+        只看"不完整"的卡：完整的卡要么已经存过，要么是重复帧，不该再当目标，
+        否则会算出几像素的滑动——那种滑动在 Android 眼里就是长按，会选中题干。
         """
 
         for card, number in zip(cards, numbers):
+
+            if card.complete():
+                continue
 
             if number is not None:
                 if number in saved_numbers or number in skipped:
                     continue
                 return card, number
 
-            # ------ 没读出编号：只能靠指纹判断存没存过 ------ #
-            if not card.complete():
-                return card, number
+            # ------ 没读出编号、标题又被压住的，没法可靠对齐，跳过 ------ #
+            if card.header_top <= const.CARD_SAFE_TOP:
+                continue
+
             signature = QuestionCard.fingerprint(QuestionCard.crop(frame, card))
             if GetScreenshot.already_saved(None, signature, saved_numbers, saved_images):
                 continue
@@ -179,7 +217,7 @@ class GetScreenshot:
 
         for _ in range(pages * 6 + 10):
 
-            frame = AndroidDevice.capture()
+            frame = GetScreenshot.capture_clean()
             if frame is None:
                 return
 
@@ -197,28 +235,30 @@ class GetScreenshot:
                 if not card.complete():
                     continue
 
-                # ------ 编号明显倒退，多半是 OCR 认错了，当成没认出来 ------ #
-                if number is not None and saved_numbers and number < saved_numbers[-1]:
-                    print("[提示] 读到编号 %d，比上一题的 %d 还小，按未读出处理"
-                          % (number, saved_numbers[-1]))
+                # ------ 编号已知且已经存过：直接跳过，不做校验（否则满屏噪音） ------ #
+                if number is not None and number in saved_numbers:
+                    continue
+
+                # ------ 题号只认"上一题+1 ~ 上一题+4"，离谱的一律按没读出来处理 ------ #
+                expected = saved_numbers[-1] + 1 if saved_numbers else None
+                if number is not None and expected is not None and not (expected <= number <= expected + 4):
+                    print("[提示] 读到编号 %d，和预期的 %d 对不上，按未读出处理" % (number, expected))
                     number = None
 
                 image = QuestionCard.crop(frame, card)
                 signature = QuestionCard.fingerprint(image)
 
                 if GetScreenshot.already_saved(number, signature, saved_numbers, saved_images):
-                    if number is not None:
-                        print("跳过 第%d题：之前已经存过" % number)
                     continue
 
                 if number is None:
-                    index = (max(saved_numbers) + 1) if saved_numbers else 1
+                    index = expected if expected is not None else 1
                     print("[警告] 有一题没读出编号，暂存为 %d.png" % index)
                 else:
                     index = number
-                    if saved_numbers and index != saved_numbers[-1] + 1:
+                    if expected is not None and index != expected:
                         print("[提示] 编号从 %d 直接跳到 %d，中间可能有题没截到"
-                              % (saved_numbers[-1], index))
+                              % (expected - 1, index))
 
                 saved_numbers.append(index)
                 saved_images.append(signature)
@@ -249,15 +289,15 @@ class GetScreenshot:
                         print("[提示] 第%s题一屏放不下，已跳过（可手动补截）" % target_number)
                     scroll = int(height * GetScreenshot.TALL_RATIO)
 
-            # ------ 画面没变：先重试，连续几帧不动才认为到底 ------ #
+            # ------ 画面没变：先加大距离重试，连续几帧不动才认为到底 ------ #
             digest = hashlib.md5(frame.tobytes()).hexdigest()
             if digest == last_frame:
                 still += 1
                 if still >= GetScreenshot.STILL_LIMIT:
                     print("[提示] 连续 %d 帧画面没有变化，判定已经到底" % still)
                     break
-                print("[提示] 画面没有变化，重试一次滑动")
-                AndroidDevice.swipe(scroll if abs(scroll) > 60 else 450)
+                print("[提示] 画面没有变化，加大距离重试")
+                AndroidDevice.swipe(int(height * 0.6) if abs(scroll) < 60 else int(scroll * 1.2))
                 time.sleep(1)
                 continue
 

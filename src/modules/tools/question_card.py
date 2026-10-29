@@ -29,9 +29,9 @@ class Card(NamedTuple):
 
     def complete(self) -> bool:
 
-        """题干没被顶部标题栏挡住，而且这道题的页脚也在画面里"""
+        """标题行、题干、页脚都在画面里，才算这道题完整"""
 
-        return self.top > const.CARD_SAFE_TOP and self.footer > 0
+        return self.header_top > const.CARD_SAFE_TOP and self.top > const.CARD_SAFE_TOP and self.footer > 0
 
     def cut_bottom(self) -> bool:
 
@@ -145,7 +145,8 @@ class QuestionCard:
         """
         从标题行读出题目编号（题目273 -> 273），读不出来返回 None
 
-        编号是截图的唯一键：编号不同就是不同的题，不再靠图像相似度猜
+        编号是截图的唯一键，所以只认"题目N"这一种写法。以前认不出时会退回去
+        抓"第一个多位数"，正文里的 714、143 就这么被当成了题号，编号一错后面全乱。
         """
 
         crop = frame.crop((
@@ -156,14 +157,9 @@ class QuestionCard:
         ))
         text = Ocr.text(crop, config="--psm 7")
 
-        # ------ 优先认"题目N"，认不出再退回第一个数字（并排除"(1分)"里的 1） ------ #
         match = re.search(r"题\s*目\s*(\d{1,3})", text)
         if match is None:
-            numbers = re.findall(r"\d{1,3}", text)
-            numbers = [item for item in numbers if len(item) > 1]
-            if not numbers:
-                return None
-            return int(numbers[0])
+            return None
         return int(match.group(1))
 
     @staticmethod
@@ -171,13 +167,18 @@ class QuestionCard:
 
         """
         按裁一张题卡：左右整幅，上下各留一点白
+        下沿要停在这道题页脚之前，免得页脚那行灰字蹭进图片、被 OCR 认成题目的内容
         """
 
         width, height = frame.size
         scale = width / const.EMULATOR_WIDTH
         top = max(0, int(round((card.top - const.CARD_TOP_MARGIN) * scale)))
         bottom = min(height, int(round((card.bottom + const.CARD_BOTTOM_MARGIN) * scale)))
-        return frame.crop((0, top, width, bottom))
+
+        if card.footer > 0:
+            bottom = min(bottom, int(round((card.footer - const.CARD_FOOTER_GAP) * scale)))
+
+        return frame.crop((0, top, width, max(top + 1, bottom)))
 
     @staticmethod
     def fingerprint(image: Image.Image) -> np.ndarray:

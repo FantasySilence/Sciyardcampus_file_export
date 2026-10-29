@@ -112,6 +112,7 @@ class AndroidDevice:
 
         """
         把一次滑动拆成不超过画面高度 60% 的若干段
+        余数太小的尾段直接丢掉：几像素的滑动推不动页面，还会被当成"长按"选中文字
         """
 
         limit = int(const.EMULATOR_HEIGHT * const.MAX_SWIPE_RATIO)
@@ -123,6 +124,10 @@ class AndroidDevice:
             step = min(remaining, limit)
             steps.append((direction, step))
             remaining -= step
+
+        # ------ 去掉小尾巴（例如 542 拆成 540+2，那 2 像素没用还有风险） ------ #
+        while len(steps) > 1 and steps[-1][1] < 40:
+            steps.pop()
         return steps
 
     @staticmethod
@@ -138,7 +143,17 @@ class AndroidDevice:
         return x, int(const.EMULATOR_HEIGHT * ratio)
 
     @staticmethod
-    def adb_swipe(pixels: int, direction: int = 1):
+    def duration_for(pixels: int) -> int:
+
+        """
+        按距离给滑动时长：短距离不能拖太久，否则 Android 当成"长按"，直接选中题干文字
+        """
+
+        duration = abs(int(pixels)) * const.ADB_MS_PER_PIXEL
+        return max(const.ADB_MIN_DURATION, min(const.ADB_DURATION, duration))
+
+    @staticmethod
+    def adb_swipe(pixels: int, direction: int = 1, duration: Optional[int] = None):
 
         """
         adb shell input swipe 直接用虚拟机坐标，窗口怎么缩放都不影响
@@ -147,11 +162,14 @@ class AndroidDevice:
         start_x, start_y = AndroidDevice.start_point(direction)
         end_y = max(10, min(start_y - direction * pixels, const.EMULATOR_HEIGHT - 10))
 
+        if duration is None:
+            duration = AndroidDevice.duration_for(end_y - start_y)
+
         subprocess.run(
             AndroidDevice.command(
                 "shell", "input", "swipe",
                 str(start_x), str(start_y), str(start_x), str(end_y),
-                str(const.ADB_DURATION),
+                str(duration),
             ),
             check=True,
             stdout=subprocess.PIPE,
@@ -159,7 +177,27 @@ class AndroidDevice:
         )
 
         if const.VERBOSE:
-            print("adb 滑动 %d 虚拟机像素，(%d, %d) => (%d, %d)" % (pixels, start_x, start_y, start_x, end_y))
+            print("adb 滑动 %d 虚拟机像素，(%d, %d) => (%d, %d)，用时 %dms"
+                  % (pixels, start_x, start_y, start_x, end_y, duration))
+
+    @staticmethod
+    def tap(x: int, y: int):
+
+        """
+        点一下（虚拟机坐标）：用来取消 WebView 的文本选中状态
+        """
+
+        if AndroidDevice.adb() is not None:
+            subprocess.run(
+                AndroidDevice.command("shell", "input", "tap", str(x), str(y)),
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            return
+
+        screen_x, screen_y = EmulatorScreen.to_screen(x, y)
+        pyautogui.click(screen_x, screen_y)
 
     @staticmethod
     def drag(pixels: int, direction: int = 1):

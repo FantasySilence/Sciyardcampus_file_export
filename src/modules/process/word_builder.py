@@ -8,6 +8,7 @@
 # ================================================================== #
 import os
 import re
+import glob
 from docx import Document
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
@@ -26,8 +27,9 @@ class WordBuilder:
     resources/word_output/<题型>题库.docx
 
     规则（txt 的文件名决定用哪种）：
-        1_formula.txt —— 有公式的题，OCR 认不准，直接把原图贴进 Word；
-        1.txt         —— 没公式的题，把 txt 里的段落原样转成 Word 正文。
+        1_formula.txt / 1_table.txt / 1_image.txt（以及 1_formula_table.txt 这类组合）
+                      —— 有公式、表格或图像，OCR 认不准、转文字会丢内容，直接把原图贴进 Word；
+        1.txt         —— 纯文字的题，把 txt 里的段落原样转成 Word 正文。
     """
 
     @staticmethod
@@ -74,7 +76,7 @@ class WordBuilder:
     def indexes(png_type: str) -> List[int]:
 
         """
-        这一题型下有哪些题号（按 1.txt / 1_formula.txt 的文件名取数字）
+        这一题型下有哪些题号（按 1.txt / 1_formula.txt / 1_image.txt 这类文件名取数字）
         """
 
         root = FilesIO.loadText(sub_dir=png_type)
@@ -145,23 +147,24 @@ class WordBuilder:
         for index in indexes:
 
             txt_root = FilesIO.loadText(sub_dir=png_type)
-            formula_txt = os.path.join(txt_root, "%d%s.txt" % (index, const.OCR_FORMULA_SUFFIX))
+            tagged = sorted(glob.glob(os.path.join(txt_root, "%d_*.txt" % index)))
             plain_txt = os.path.join(txt_root, "%d.txt" % index)
             png_path = os.path.join(FiguresIO.loadFigure(sub_dir=png_type), "%d.png" % index)
 
-            # ------ 有公式：贴原图 ------ #
-            if os.path.exists(formula_txt):
+            # ------ 标了公式/表格/图像：贴原图 ------ #
+            if tagged:
                 WordBuilder.add_title(document, index)
                 if os.path.exists(png_path):
                     WordBuilder.add_picture(document, png_path)
                     image_count += 1
                 else:
-                    print("[警告] %s\\%d.png 不存在，%d_formula.txt 退化成文字" % (png_type, index, index))
-                    WordBuilder.add_text(document, formula_txt)
+                    print("[警告] %s\\%d.png 不存在，%s 退化成文字"
+                          % (png_type, index, os.path.basename(tagged[0])))
+                    WordBuilder.add_text(document, tagged[0])
                     text_count += 1
                 continue
 
-            # ------ 没公式：转文字 ------ #
+            # ------ 纯文字：转文字 ------ #
             if os.path.exists(plain_txt):
                 WordBuilder.add_title(document, index)
                 WordBuilder.add_text(document, plain_txt)
