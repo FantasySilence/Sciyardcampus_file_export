@@ -60,7 +60,17 @@
 **文字是怎么处理的**：
 
 - 按「题干 / 每个选项 / 每个小问」合并成段落，段与段之间空一行；
-- 公式片段统一用 `$...$` 包起来（后续交给 pandoc / Word 就是公式对象），并按文件名标注 `_formula`。
+- 公式片段统一用 `$...$` 包起来（后续交给 pandoc / Word 就是公式对象）；
+- 每道题按内容特征打标签，写在 txt 文件名上，和纯文字题目区分开：
+
+  | 标签 | 判据 | 例子 |
+  |---|---|---|
+  | `_formula` | OCR 出来的文字里有公式 | `1_formula.txt` |
+  | `_table` | 版面里有成组的贯穿长横线 + 长竖线（表格边框） | `1_table.txt` |
+  | `_image` | 连续一大片行都有墨迹（文字行之间必有空行，所以是插图） | `1_image.txt` |
+  | （无） | 纯文字 | `1.txt` |
+
+  一道题同时命中多个时按 `formula` → `table` → `image` 拼接，例如 `436_formula_table.txt`。
 
 ---
 
@@ -189,8 +199,10 @@ resources/
 │   ├── 分析题/1.png
 │   └── …
 ├── row_txt/                  ② 识别出的文字
-│   ├── 选择题/273.txt          无公式
-│   ├── 选择题/275_formula.txt  含公式（公式片段用 $...$ 标出）
+│   ├── 选择题/273.txt             纯文字
+│   ├── 选择题/275_formula.txt     含公式（公式片段用 $...$ 标出）
+│   ├── 选择题/436_table.txt       含表格
+│   ├── 选择题/481_image.txt       含图像（图形）
 │   └── …
 └── word_output/              ③ 题库文档
     ├── 选择题题库.docx
@@ -200,9 +212,9 @@ resources/
 
 - 文件名就是**试卷里的题目编号**（题目 273 → `273.png` / `273.txt` / Word 里的「第273题」），三个目录一一对应；
 - 编号不连续就说明中间有题没截到，日志里会有 `编号从 N 直接跳到 M` 的提示；
-- 含公式的题在 Word 里是**题目原图**（等比缩放铺满正文宽度），因为公式文字 OCR 不可靠；
-- 不含公式的题是**可编辑文字**，每个选项单独一段；
-- `row_txt` 里带 `_formula` 后缀的题，就是需要重点核对的那批。
+- 带 `_formula` / `_table` / `_image` 后缀的题，在 Word 里是**题目原图**（等比缩放铺满正文宽度），因为公式、表格、图形转成文字都会丢内容；
+- 不带后缀的纯文字题是**可编辑文字**，每个选项单独一段；
+- `row_txt` 里带后缀的题，就是需要重点核对的那批（`main.py check` 会分别统计三类数量）。
 
 单题 txt 的样子：
 
@@ -236,7 +248,11 @@ D 都不会
 | `SAME_RATIO` | `0.008` | 兜底去重阈值：只有「题目N」读不出来时才用指纹比较 |
 | `TESSERACT_PATH` | 本机 Tesseract 路径 | OCR 可执行文件路径 |
 | `TESSERACT_LANG` / `TESSERACT_CONFIG` | `chi_sim+eng` / `--psm 6` | OCR 语言与版面模式 |
-| `OCR_FORMULA_SUFFIX` | `_formula` | 含公式的 txt 文件名后缀 |
+| `OCR_FORMULA_SUFFIX` / `OCR_TABLE_SUFFIX` / `OCR_IMAGE_SUFFIX` | `_formula` / `_table` / `_image` | 三类题在 txt 文件名上的后缀 |
+| `SHAPE_TABLE_H_LINES` / `SHAPE_TABLE_V_LINES` | `3` / `3` | 至少几条长横线 + 长竖线才判为表格 |
+| `SHAPE_TABLE_H_RATIO` / `SHAPE_TABLE_V_RATIO` | `0.18` / `0.12` | 横线占画面宽、竖线占画面高的最低比例 |
+| `SHAPE_FIGURE_SPAN` | `100` | 连续多少行都有墨迹就判为图像 |
+| `SHAPE_LINE_GAP` | `3` | 找长直线前补齐几像素的缝（表格格子之间有缝） |
 | `WORD_FONT` / `WORD_FONT_SIZE` | `宋体` / `10.5` | Word 正文字体与字号 |
 | `WORD_TITLE_SUFFIX` | `题库` | 输出的 Word 文件名后缀 |
 | `WORD_QUESTION_TITLE` | `第%d题` | 每题前面的小标题格式 |
@@ -257,6 +273,16 @@ D 都不会
 文件名就是试卷里的**题目编号**。这样跳过的题、换题型的题都不会让后面的编号错位，
 `row_pngs` / `row_txt` / Word 三处也能一一对应。如果发现编号不连续，说明中间有题没截到，
 日志里会有 `编号从 N 直接跳到 M` 的提示。
+
+**Q：txt 文件名上的 `_formula` / `_table` / `_image` 是什么意思？**
+这是这道题的内容特征，用来把"OCR 靠不住、需要对着原图核对"的题挑出来：
+
+- `_formula`：文字里有公式（斜体变量、上下标容易被认错）；
+- `_table`：版面上有表格（成组的贯穿长横线 + 长竖线），OCR 出来会变成一串错位的数字；
+- `_image`：版面上有插图（曲线、示意图），OCR 完全认不出图形；
+
+带后缀的题在 Word 里会直接贴原图，纯文字题才转成可编辑文字。
+标签是按版面自动判断的，偶尔会有个别误判——**看图核对时以图片为准**。
 
 **Q：日志里出现「第N题一屏放不下，已跳过」？**
 这道题比一屏还高（正文超过约 620px），程序不会硬截成两张，而是跳过并在结束时列出题号，
@@ -360,6 +386,7 @@ Sciyardcampus_file_export/
 │       │   ├── emulator_screen.py # 虚拟机窗口 / 屏幕坐标适配（鼠标兜底用）
 │       │   ├── android_device.py  # adb 截图与滑动、鼠标拖拽兜底
 │       │   ├── question_card.py   # 题卡识别、裁剪、去重指纹、读题目编号
+│       │   ├── question_shape.py  # 判断题卡里有没有表格 / 图像
 │       │   └── ocr.py             # Tesseract 薄封装（读正文、读标题行编号）
 │       ├── datapreparation/
 │       │   ├── screenshot.py      # GetScreenshot：截图流水线
@@ -378,9 +405,10 @@ Sciyardcampus_file_export/
 | `AndroidDevice` | 截图与滑动：优先 adb，失败或无 adb 时退回鼠标 | `capture()`、`swipe()`、`adb_swipe()`、`drag()` |
 | `Ocr` | Tesseract 薄封装，统一可执行文件路径 | `prepare()`、`text()` |
 | `Card` / `QuestionCard` | 从整屏帧里认出每道题、裁剪、读编号、生成去重指纹 | `split()`、`crop()`、`header_number()`、`fingerprint()` |
+| `QuestionShape` | 判断题卡版面：有没有表格（长横线+长竖线）、有没有图像（连续有墨迹） | `kinds()`、`has_table()`、`has_figure()` |
 | `GetScreenshot` | 截图主流程：截屏 → 切题 → 按编号去重 → 存图 → 对齐翻页 | `save()`、`probe()`、`first_unsaved()`、`target_scroll()` |
-| `TextExtraction` | OCR 主流程：识别 → 分段 → 公式标记 → 写 txt | `save()`、`write()`、`mark_math()` |
-| `WordBuilder` | 按题型合成 Word：公式题贴图、纯文本题转段落 | `save()`、`build()`、`add_picture()` |
+| `TextExtraction` | OCR 主流程：识别 → 分段 → 公式标记 → 特征打标签 → 写 txt | `save()`、`write()`、`mark_math()`、`kinds_of()` |
+| `WordBuilder` | 按题型合成 Word：带标签的题贴图、纯文本题转段落 | `save()`、`build()`、`add_picture()` |
 
 ### 数据流
 
@@ -393,7 +421,7 @@ QuestionCard.header_number() ──► 题目编号（去重、命名的唯一�
         │
 QuestionCard.crop()      ──► 题卡图 ──► resources/row_pngs/<题型>/<题号>.png
         │
-TextExtraction.write()   ──► resources/row_txt/<题型>/<题号>[_formula].txt
+TextExtraction.write()   ──► resources/row_txt/<题型>/<题号>[_formula|_table|_image].txt
         │
 WordBuilder.build()      ──► resources/word_output/<题型>题库.docx
 ```
