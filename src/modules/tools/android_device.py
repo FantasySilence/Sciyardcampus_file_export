@@ -36,6 +36,8 @@ class AndroidDevice:
     # ------ adb 探测结果的缓存 ------ #
     _adb: Optional[str] = None
     _adb_searched = False
+    _serial: Optional[str] = None
+    _serial_searched = False
 
     @staticmethod
     def adb() -> Optional[str]:
@@ -61,6 +63,46 @@ class AndroidDevice:
         return AndroidDevice._adb
 
     @staticmethod
+    def serial() -> Optional[str]:
+
+        """
+        用哪个设备：const.ADB_SERIAL 优先，没填就自动探测
+
+        只认状态为 device 的条目：只有一个就用它；有多个就优先挑 127.0.0.1:xxxx
+        这条（模拟器的 adb 通道）。不指定的话 adb 会报 "more than one
+        device/emulator"，然后截图会静默退回鼠标通道——截出来是缩放过的窗口，
+        一张题卡都认不出来，所以必须在动手截之前定下来。
+        """
+
+        if const.ADB_SERIAL:
+            return const.ADB_SERIAL
+        if AndroidDevice._serial_searched:
+            return AndroidDevice._serial
+
+        AndroidDevice._serial_searched = True
+        result = subprocess.run(
+            [AndroidDevice.adb() or "adb", "devices"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        devices = []
+        for line in result.stdout.decode("utf-8", "ignore").splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[1] == "device":
+                devices.append(parts[0])
+
+        if len(devices) == 1:
+            AndroidDevice._serial = devices[0]
+        elif len(devices) > 1:
+            network = [name for name in devices if name.startswith(("127.0.0.1:", "localhost:"))]
+            AndroidDevice._serial = network[0] if network else devices[0]
+            if const.VERBOSE:
+                print("[提示] adb 检测到 %d 个设备，使用 %s（要固定就填 const.ADB_SERIAL）"
+                      % (len(devices), AndroidDevice._serial))
+        return AndroidDevice._serial
+
+    @staticmethod
     def command(*args: str) -> List[str]:
 
         """
@@ -68,8 +110,9 @@ class AndroidDevice:
         """
 
         adb = [AndroidDevice.adb() or "adb"]
-        if const.ADB_SERIAL:
-            adb += ["-s", const.ADB_SERIAL]
+        serial = AndroidDevice.serial()
+        if serial:
+            adb += ["-s", serial]
         return adb + list(args)
 
     @staticmethod
