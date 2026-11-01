@@ -9,6 +9,8 @@
 import os
 from typing import Optional
 
+from src.common import const
+
 
 class FilesIO:
 
@@ -36,6 +38,36 @@ class FilesIO:
         folder = ROOTPATH + "/resources/row_txt"
         if sub_dir is not None:
             folder = folder + "/" + sub_dir
+
+        # ------ 检查是否存在数据文件夹，不存在就创建一个 ------ #
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
+        # ------ 获取文件路径 ------ #
+        if filename == None:
+            return folder
+        else:
+            return folder + "/" + filename
+
+    @staticmethod
+    def loadPaperText(filename: Optional[str] = None, paper: Optional[str] = None) -> str:
+
+        """
+        filename: 文件名
+        paper: 卷名，路径变成 resources/row_paper/期中卷/txts/1.txt
+        """
+
+        # ------ common路径 ------ #
+        common_path = os.path.dirname(os.path.abspath(__file__))
+
+        # ------ src路径 ------ #
+        src_path = os.path.dirname(common_path)
+        ROOTPATH = os.path.dirname(src_path)
+
+        # ------ 输出目录：resources/row_paper[/卷名/txts] ------ #
+        folder = ROOTPATH + "/resources/" + const.PAPER_FOLDER
+        if paper is not None:
+            folder = folder + "/" + paper + "/" + const.PAPER_TXTS
 
         # ------ 检查是否存在数据文件夹，不存在就创建一个 ------ #
         if not os.path.exists(folder):

@@ -9,6 +9,8 @@
 import os
 from typing import Optional
 
+from src.common import const
+
 
 class FiguresIO:
 
@@ -35,6 +37,37 @@ class FiguresIO:
         folder = ROOTPATH + "/resources/row_pngs"
         if sub_dir is not None:
             folder = folder + "/" + sub_dir
+
+        # ------ 检查是否存在数据文件夹，不存在就创建一个 ------ #
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
+        # ------ 输出图片路径 ------ #
+        if fig_name == None:
+            return folder
+        else:
+            return folder + "/" + fig_name
+
+    @staticmethod
+    def loadPaper(fig_name: Optional[str] = None, paper: Optional[str] = None) -> str:
+
+        """
+        fig_name: 图片名称
+        paper: 卷名，路径变成 resources/row_paper/期中卷/pngs/1.png
+        不给卷名时返回 resources/row_paper 根目录
+        """
+
+        # ------ common路径 ------ #
+        common_path = os.path.dirname(os.path.abspath(__file__))
+
+        # ------ src路径 ------ #
+        src_path = os.path.dirname(common_path)
+        ROOTPATH = os.path.dirname(src_path)
+
+        # ------ 输出目录：resources/row_paper[/卷名/pngs] ------ #
+        folder = ROOTPATH + "/resources/" + const.PAPER_FOLDER
+        if paper is not None:
+            folder = folder + "/" + paper + "/" + const.PAPER_PNGS
 
         # ------ 检查是否存在数据文件夹，不存在就创建一个 ------ #
         if not os.path.exists(folder):

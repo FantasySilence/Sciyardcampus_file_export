@@ -76,6 +76,28 @@ SAME_RATIO = 0.008
 TARGET_HEADER_TOP = 220       # 滑动后希望下一题标题行停在的纵向位置
 PROBE_FIGURE = "_probe.png"   # probe() 保存整屏画面的文件名
 
+# ------ 混合试卷（整卷一次滚到底，存到 resources/row_paper/<卷名>/） ------ #
+# 整卷里每类题型的题号都从 1 开始，所以「身份」是 (分区, 题号)，分区靠页脚那行
+# 的题型名确认；文件名用顺序号（1.png、2.png ...），不跟题号走。
+PAPER_FOLDER = "row_paper"      # 输出目录名：resources/row_paper/<卷名>/pngs/
+PAPER_PNGS = "pngs"             # 卷子里的图片子目录
+PAPER_TXTS = "txts"             # 卷子里的文字子目录：resources/row_paper/<卷名>/txts/
+PAPER_FOOTER_PSM = "--psm 7"    # 读页脚那行（"二、需求与供给 | 单选题 | 易"）当成一行
+PAPER_FOOTER_WIDTH = 620        # 页脚只在画面左侧这么多像素里读
+PAPER_FOOTER_PAD = 6            # 页脚那行上面多裁几像素
+PAPER_FOOTER_HEIGHT = 26        # 页脚那行下面多裁几像素
+
+# 页脚里可能出现的题型名（认不出来就沿用上一次的题型）
+PAPER_TYPES = (
+    "单选题", "多选题", "判断题", "填空题", "选择题",
+    "分析题", "计算题", "画图题", "问答题", "简答题",
+    "论述题", "应用题", "证明题",
+)
+
+PAPER_TYPE_CHECK_EVERY = 5      # 每存这么多题复核一次页脚题型（整卷题号连续时靠它换标签）
+PAPER_RECENT = 5                # 题号读不出时，和最近这么多张比指纹兜底
+PAPER_JUMP = 4                  # 同一分区里题号比上一题大这么多以上，按未读出处理
+
 # ------ 文本选中检测 ------ #
 # WebView 里长按文字会进入选词状态（整页蓝底 + 复制/全选菜单），一旦发生就截不了图。
 # 这里用蓝色像素占比判断，超过阈值就点一下空白处取消。

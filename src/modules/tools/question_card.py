@@ -163,6 +163,36 @@ class QuestionCard:
         return int(match.group(1))
 
     @staticmethod
+    def footer_type(frame: Image.Image, card: Card) -> Optional[str]:
+
+        """
+        从页脚那行灰字里读题型："二、需求与供给 | 单选题 | 易" -> 单选题
+
+        混合试卷里每类题型的题号都从 1 开始，所以只能靠题型把两段题号隔开。
+        页脚格式是「章节标题 | 题型 | 难度」，优先认第二段；读不出来返回 None，
+        调用方沿用上一次的题型即可。
+        """
+
+        if card.footer <= 0:
+            return None
+
+        # ------ 页脚行按虚拟机像素标定，缩放截图要换算 ------ #
+        scale = frame.size[0] / const.EMULATOR_WIDTH
+        top = max(0, int(round((card.footer - const.PAPER_FOOTER_PAD) * scale)))
+        bottom = min(frame.size[1], int(round((card.footer + const.PAPER_FOOTER_HEIGHT) * scale)))
+        right = min(frame.size[0], int(round(const.PAPER_FOOTER_WIDTH * scale)))
+
+        text = Ocr.text(frame.crop((0, top, right, bottom)), config=const.PAPER_FOOTER_PSM)
+
+        # ------ 先只看「题型」那一段，免得章节名里也带题型关键字 ------ #
+        fields = [re.sub(r"\s+", "", field) for field in text.split("|")]
+        for field in (fields[1:2] if len(fields) > 1 else []) + fields:
+            for kind in const.PAPER_TYPES:
+                if kind in field:
+                    return kind
+        return None
+
+    @staticmethod
     def crop(frame: Image.Image, card: Card) -> Image.Image:
 
         """
