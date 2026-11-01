@@ -49,6 +49,10 @@
 
 三个步骤互相独立，可以分开反复跑：截图依赖模拟器，OCR 和 Word 只读写本地文件。
 
+> 另有一条「**混合试卷**」路线：一份卷子里好几类题型混在一起时不用分次截——从最上面一次滚到底，
+> 图存到 `resources/row_paper/<卷名>/pngs/`，文件名是顺序号（`1.png`、`2.png` …）。
+> 见 [混合试卷（整卷一次截完）](#混合试卷整卷一次截完)。这条路**截图 → 文字 → Word** 都能跑。
+
 **截图是怎么定题的**（不依赖固定坐标）：
 
 1. 用标题行里的红字「（x分）」定位每道题的起点；
@@ -149,9 +153,12 @@ python main.py probe
 python main.py                  # 全套：截图 -> OCR -> Word -> 核对
 python main.py capture          # 只截图（会提示你把试卷滑到每个题型的开头）
 python main.py capture -t 选择题 # 只截某一种题型
+python main.py paper -n 期中卷   # 混合试卷：整卷一次滚到底，按顺序号存图
 python main.py ocr              # 只做文字提取
+python main.py ocr -n 期中卷     # 混合试卷的文字提取
 python main.py word             # 只生成 Word
-python main.py check            # 只打印产物统计
+python main.py word -n 期中卷    # 混合试卷导 Word
+python main.py check            # 只打印产物统计（分题型 + 混合试卷）
 python main.py probe            # 调试：截整屏、打印题卡位置和题目编号
 ```
 
@@ -168,6 +175,91 @@ python main.py probe            # 调试：截整屏、打印题卡位置和题�
 
 > 截图过程会实时打印「已保存 选择题\273.png」「编号从 273 直接跳到 275，中间可能有题没截到」
 > 这类信息，跑完还会汇总保存数量和跳过的题号，方便对照检查。
+
+### 混合试卷（整卷一次截完）
+
+一份卷子里选择题、分析题、计算题混在一起时，不用分次截，也不用手动滑到每个题型的开头：
+
+```bash
+python main.py paper -n 期中卷          # 整卷，pages 默认 2000（截到底会自己停）
+python main.py paper -n 期中卷 -p 30    # 先短跑 30 道
+python main.py paper -n 期中卷 --fresh  # 开跑前先清空该卷文件夹里的旧图
+```
+
+三步都用同一个卷名，产物都落在这一卷自己的目录里：
+
+```bash
+python main.py paper -n 期中卷   # ① 截图 -> row_paper/期中卷/pngs/1.png …
+python main.py ocr   -n 期中卷   # ② 文字 -> row_paper/期中卷/txts/1.txt …
+python main.py word  -n 期中卷   # ③ Word -> word_output/期中卷.docx
+```
+
+也可以直接在 py 文件里调：
+
+```python
+from src.modules.datapreparation.paper_screenshot import GetPaperScreenshot
+
+GetPaperScreenshot.probe()                                   # 先看题卡和页脚题型认得对不对
+GetPaperScreenshot.save(paper="期中卷", pages=2000)
+```
+
+和分题型截图只有两处不同：
+
+| | 分题型（`capture`） | 混合试卷（`paper`） |
+|---|---|---|
+| 文件名 | 题目编号（`273.png`） | **顺序号**（`1.png`、`2.png` …） |
+| 目录 | `row_pngs/<题型>/` | `row_paper/<卷名>/pngs/` |
+| 去重键 | 题目编号 | **(分区, 题目编号)**——整卷里每类题型的题号都从 1 开始，靠页脚的题型名把两段隔开 |
+| 题型切换 | 手动，每段前回车 | 自动，读到题号回退时读页脚确认 |
+
+滚动对齐、到底判定、防「长按选中题干」这些和分题型完全共用一套逻辑。
+
+> `pages` 是题量上限：截到底会自己停，但给太小会提前结束。整卷跑记得给够（默认 2000）。
+
+截完之后提取文字，思路和分题型完全一样（分段、公式标 `$...$`、公式/表格/图像打标签），
+只是读写目录换成卷子自己的：
+
+```bash
+python main.py ocr -n 期中卷        # 读 pngs/，写 txts/
+```
+
+```python
+from src.modules.datapreparation.paper_text_extraction import PaperTextExtraction
+
+PaperTextExtraction.save(paper="期中卷")              # 全部
+PaperTextExtraction.save(paper="期中卷", indexes=[1, 2])  # 只识别某几张
+```
+
+```
+row_paper/期中卷/
+├── pngs/   1.png  2.png  …
+└── txts/   1.txt  1_formula.txt  2.txt  …     文件名与图片的顺序号一一对应
+```
+
+同一道题换标签重跑时，旧标签的 txt 会被删掉（`1_table.txt` → 跑成 `1.txt` 后不会并存）。
+`txts` 里带标签的题同样会在结束时列出来，提示对着原图核对。
+
+最后导出 Word，文件名就是卷名：
+
+```bash
+python main.py word -n 期中卷        # -> resources/word_output/期中卷.docx
+```
+
+```python
+from src.modules.process.paper_word_builder import PaperWordBuilder
+
+PaperWordBuilder.save(paper="期中卷")
+```
+
+规则和分题型一致：带 `_formula` / `_table` / `_image` 的题贴原图，纯文字题转成正文，
+每道题前面带「第N题」（N 就是图片的顺序号）。
+
+`python main.py check` 也会按卷统计：
+
+```
+混合试卷：
+  期中卷：图片 23 张，txt 23 份（公式 8、表格 0、图像 0），Word 已生成
+```
 
 ### 方式二：Notebook（`main.ipynb`）
 
@@ -198,6 +290,16 @@ resources/
 │   ├── 选择题/273.png
 │   ├── 分析题/1.png
 │   └── …
+├── row_paper/                ① 混合试卷（截图 + 文字 + Word）
+│   └── 期中卷/
+│       ├── pngs/                 图片都放这个子目录
+│       │   ├── 1.png                 顺序号，不是题号
+│       │   ├── 2.png
+│       │   └── …
+│       └── txts/                 ② 对应的文字，文件名与图片顺序号一致
+│           ├── 1.txt
+│           ├── 1_formula.txt
+│           └── …
 ├── row_txt/                  ② 识别出的文字
 │   ├── 选择题/273.txt             纯文字
 │   ├── 选择题/275_formula.txt     含公式（公式片段用 $...$ 标出）
@@ -205,10 +307,16 @@ resources/
 │   ├── 选择题/481_image.txt       含图像（图形）
 │   └── …
 └── word_output/              ③ 题库文档
-    ├── 选择题题库.docx
-    ├── 分析题题库.docx
+    ├── 选择题题库.docx            按题型
+    ├── 期中卷.docx               混合试卷（文件名就是卷名）
     └── …
 ```
+
+- `row_paper/<卷名>/pngs` 里是**整卷**的截图，文件名是保存顺序（`1.png` 是这一卷的第一道题），
+  不是题目编号——因为整卷里每类题型的题号都从 1 开始，用题号会重名；
+- 图片、文字分放在 `pngs` / `txts` 两个子目录，文件名一一对应（`3.png` ↔ `3_formula.txt`），
+  后面再加别的产物（比如答案、解析）也能各占一个子目录；
+- 混合卷导出的 Word 叫 `<卷名>.docx`，每道题前面写「第N题」（N 是顺序号）；
 
 - 文件名就是**试卷里的题目编号**（题目 273 → `273.png` / `273.txt` / Word 里的「第273题」），三个目录一一对应；
 - 编号不连续就说明中间有题没截到，日志里会有 `编号从 N 直接跳到 M` 的提示；
@@ -246,6 +354,14 @@ D 都不会
 | `CARD_SAFE_TOP` | `130` | 画面顶部被 App 标题栏挡住的高度 |
 | `TARGET_HEADER_TOP` | `220` | 翻页后希望下一题标题行停在的位置 |
 | `SAME_RATIO` | `0.008` | 兜底去重阈值：只有「题目N」读不出来时才用指纹比较 |
+| `PAPER_FOLDER` | `row_paper` | 混合试卷的输出目录名（`resources/row_paper/<卷名>/pngs/`） |
+| `PAPER_PNGS` | `pngs` | 卷子目录下放图片的子目录名 |
+| `PAPER_TXTS` | `txts` | 卷子目录下放文字的子目录名 |
+| `PAPER_TYPES` | 单选/多选/判断/填空/分析/计算/画图… | 页脚里可能出现的题型名，混合卷靠它区分分区 |
+| `PAPER_FOOTER_WIDTH` / `PAPER_FOOTER_PAD` / `PAPER_FOOTER_HEIGHT` | `620` / `6` / `26` | 读页脚题型时裁多大一条 |
+| `PAPER_TYPE_CHECK_EVERY` | `5` | 每存几题复核一次页脚题型（整卷题号连续时靠它换标签） |
+| `PAPER_JUMP` | `4` | 题号比上一题大这么多以上就按「没读出来」处理 |
+| `PAPER_RECENT` | `5` | 题号读不出时，和最近几张比指纹兜底 |
 | `TESSERACT_PATH` | 本机 Tesseract 路径 | OCR 可执行文件路径 |
 | `TESSERACT_LANG` / `TESSERACT_CONFIG` | `chi_sim+eng` / `--psm 6` | OCR 语言与版面模式 |
 | `OCR_FORMULA_SUFFIX` / `OCR_TABLE_SUFFIX` / `OCR_IMAGE_SUFFIX` | `_formula` / `_table` / `_image` | 三类题在 txt 文件名上的后缀 |
@@ -268,6 +384,17 @@ D 都不会
 - 画面顶部标题栏更高/更矮 → 调 `CARD_SAFE_TOP`；
 - 翻页后题目位置偏移 → 调 `TARGET_HEADER_TOP`；
 - 留白不合心意 → 调 `CARD_TOP_MARGIN` / `CARD_BOTTOM_MARGIN`。
+
+**Q：混合试卷（`row_paper`）的文件名为什么是 1、2、3，而不是题号？**
+因为整卷里每类题型的题号都从 1 开始（`题目1` 会出现好几次），拿题号当文件名会互相覆盖。
+所以混合卷用**保存顺序**当文件名，去重则用「(题型, 题号)」这个组合——题型是从页脚
+（`… | 单选题 | 易`）读出来的。日志里每条都写着 `已保存 期中卷\8.png（分析题 题目1，…）`，
+对着看就知道每张图是哪道题。
+
+**Q：混合卷跑到某个题型开头，日志里没有「题型切换」？**
+只有在**题号往回走**时才去读页脚确认题型。如果这份卷子的题号是整卷连续、不按题型重置的，
+就没有"回退"这个信号，题型标签会靠每存 5 题复核一次来纠正，可能滞后几道；
+这不影响图的完整性和数量，只影响日志和结尾统计里的题型名字。
 
 **Q：文件名为什么不是从 1 开始，而是 273 这种？**
 文件名就是试卷里的**题目编号**。这样跳过的题、换题型的题都不会让后面的编号错位，
@@ -327,8 +454,10 @@ cd "…\MuMuPlayer\nx_device\15.0\shell"
 - **报 `adb server version doesn't match`**：说明有别的 adb 抢了 5037 端口，先 `taskkill /IM adb.exe /F`，再只用 MuMu 自带的 adb；
 - **验证截图链路**：`adb shell screencap -p /sdcard/t.png` 再 `adb pull /sdcard/t.png .`，能拉出 1600×900 的图就正常；
   注意别用 PowerShell 的 `>` 重定向保存 PNG，会把二进制写坏；
-- **想免掉这步手动操作**：在 `const.py` 里把 `ADB_SERIAL = "127.0.0.1:16384"` 固定下来（多开时锁定某一台），
-  或者在 `AndroidDevice.adb()` 里加一次「设备为空就自动 connect」的逻辑。
+- **想免掉这步手动操作**：脚本启动时会自己跑一次 `adb devices`——只有一个设备就用它，
+  有多个就优先挑 `127.0.0.1:xxxx` 那条（模拟器的 adb 通道），日志里会打印
+  `[提示] adb 检测到 2 个设备，使用 127.0.0.1:16384`。想锁死某一台就在 `const.py` 里填
+  `ADB_SERIAL`；设备列表为空时仍需要手动 `adb connect`（见上）。
 
 **Q：滑动后页面飞出去很远 / 滑不动？**
 - 飞出去：`ADB_DURATION` 加大（比如 2000），松手太快会被识别成「甩」；
@@ -373,7 +502,8 @@ Sciyardcampus_file_export/
 ├── main.ipynb                     # 同样流程的 Notebook 版本
 ├── reqiurements.txt               # 依赖
 ├── resources/                     # 产物（不进版本库）
-│   ├── row_pngs/                  #   题目截图
+│   ├── row_pngs/                  #   题目截图（按题型）
+│   ├── row_paper/                 #   混合试卷截图（<卷名>/pngs/<顺序号>.png）
 │   ├── row_txt/                   #   识别文字
 │   └── word_output/               #   题库 Word
 ├── src/
@@ -389,12 +519,13 @@ Sciyardcampus_file_export/
 │       │   ├── question_shape.py  # 判断题卡里有没有表格 / 图像
 │       │   └── ocr.py             # Tesseract 薄封装（读正文、读标题行编号）
 │       ├── datapreparation/
-│       │   ├── screenshot.py      # GetScreenshot：截图流水线
+│       │   ├── screenshot.py      # GetScreenshot：按题型截图流水线
+│       │   ├── paper_screenshot.py # GetPaperScreenshot：混合试卷截图流水线
 │       │   └── text_extraction.py # TextExtraction：OCR 流水线
 │       └── process/
 │           └── word_builder.py    # WordBuilder：生成题库 Word
 └── test/
-    ├── test_1.py … test_5.py      # 各模块的手工测试脚本
+    ├── test_1.py … test_7.py      # 各模块的手工测试脚本
 ```
 
 ### 模块职责
@@ -404,11 +535,14 @@ Sciyardcampus_file_export/
 | `EmulatorScreen` | 虚拟机画面与屏幕坐标换算、窗口自动探测、DPI 感知 | `window_box()`、`scale()`、`to_screen()` |
 | `AndroidDevice` | 截图与滑动：优先 adb，失败或无 adb 时退回鼠标 | `capture()`、`swipe()`、`adb_swipe()`、`drag()` |
 | `Ocr` | Tesseract 薄封装，统一可执行文件路径 | `prepare()`、`text()` |
-| `Card` / `QuestionCard` | 从整屏帧里认出每道题、裁剪、读编号、生成去重指纹 | `split()`、`crop()`、`header_number()`、`fingerprint()` |
+| `Card` / `QuestionCard` | 从整屏帧里认出每道题、裁剪、读编号、读页脚题型、生成去重指纹 | `split()`、`crop()`、`header_number()`、`footer_type()`、`fingerprint()` |
 | `QuestionShape` | 判断题卡版面：有没有表格（长横线+长竖线）、有没有图像（连续有墨迹） | `kinds()`、`has_table()`、`has_figure()` |
-| `GetScreenshot` | 截图主流程：截屏 → 切题 → 按编号去重 → 存图 → 对齐翻页 | `save()`、`probe()`、`first_unsaved()`、`target_scroll()` |
+| `GetScreenshot` | 按题型截图：截屏 → 切题 → 按编号去重 → 存图 → 对齐翻页 | `save()`、`probe()`、`first_unsaved()`、`target_scroll()` |
+| `GetPaperScreenshot` | 混合试卷截图：整卷一次滚到底，按 (分区, 题号) 去重、按顺序号存图 | `save()`、`probe()`、`first_unsaved()`、`repeated()` |
 | `TextExtraction` | OCR 主流程：识别 → 分段 → 公式标记 → 特征打标签 → 写 txt | `save()`、`write()`、`mark_math()`、`kinds_of()` |
+| `PaperTextExtraction` | 混合试卷的 OCR：`row_paper/<卷名>/pngs` → `txts`，文件名是顺序号 | `save()`、`write()` |
 | `WordBuilder` | 按题型合成 Word：带标签的题贴图、纯文本题转段落 | `save()`、`build()`、`add_picture()` |
+| `PaperWordBuilder` | 混合试卷合成 Word：`row_paper/<卷名>/txts` → `word_output/<卷名>.docx` | `save()`、`build()`、`indexes()` |
 
 ### 数据流
 
@@ -420,10 +554,32 @@ QuestionCard.split()     ──► [Card(header_top, top, bottom, footer), …]
 QuestionCard.header_number() ──► 题目编号（去重、命名的唯一键）
         │
 QuestionCard.crop()      ──► 题卡图 ──► resources/row_pngs/<题型>/<题号>.png
+        │                                  或 resources/row_paper/<卷名>/pngs/<顺序号>.png
         │
 TextExtraction.write()   ──► resources/row_txt/<题型>/<题号>[_formula|_table|_image].txt
         │
 WordBuilder.build()      ──► resources/word_output/<题型>题库.docx
+```
+
+混合试卷那条路的文字提取只是换了目录、文件名改成顺序号：
+
+```
+row_paper/<卷名>/pngs/<顺序号>.png
+        │  PaperTextExtraction.write()（复用 TextExtraction 的分段/公式/版面判断）
+        ▼
+row_paper/<卷名>/txts/<顺序号>[_formula|_table|_image].txt
+        │  PaperWordBuilder.build()（页面/标题/贴图复用 WordBuilder）
+        ▼
+resources/word_output/<卷名>.docx
+```
+
+混合试卷那条路的去重键是 `(分区, 题号)`：
+
+```
+QuestionCard.header_number()  ──► 题号（同一分区内递增）
+QuestionCard.footer_type()    ──► 题型名（"… | 单选题 | 易" 的中间那段）
+        │
+题号回退 → 读页脚确认题型 → 分区 +1 → 新分区里题号重新从 1 数
 ```
 
 ### 扩展点
@@ -443,6 +599,9 @@ WordBuilder.build()      ──► resources/word_output/<题型>题库.docx
 | `test/test_3.py` | 截图主流程 |
 | `test/test_4.py` | OCR 主流程 |
 | `test/test_5.py` | Word 生成 |
+| `test/test_7.py` | 混合试卷截图（`row_paper`） |
+| `test/test_8.py` | 混合试卷文字提取（`row_paper/<卷名>/txts`） |
+| `test/test_9.py` | 混合试卷导出 Word（`word_output/<卷名>.docx`） |
 
 > `resources/` 不进版本库，测试前需要有对应产物，或者先跑一遍截图。
 
@@ -455,7 +614,11 @@ WordBuilder.build()      ──► resources/word_output/<题型>题库.docx
 3. **比一屏还高的题会被跳过**：正文超过约 620px 的题截不成一张完整图，程序会跳过并在结束时列出题号，需要手动补截；
 4. **题目编号依赖标题行 OCR**：编号读不出来时会用「上一题编号 + 1」暂存并打警告，编号不连续时日志里会提示跳号；
 5. **只支持 Windows**：用到了 Win32 的 DPI 感知、窗口客户区接口；
-6. **题型切换需要手动**：截图只会往下走，每个题型开始前需要把试卷滑到该题型开头。
+6. **题型切换需要手动**：截图只会往下走，每个题型开始前需要把试卷滑到该题型开头（混合试卷那条路不用）；
+7. **混合试卷的 Word 是按顺序号排的**：文档里写「第1题、第2题…」，对应 `pngs/1.png`，
+   不是试卷页面上印的题号（那个题号在整卷里会重复）；
+8. **混合卷的文件名是顺序号**：重跑会从 `1.png` 覆盖，中间新增或删减会让后面的序号整体错位；
+   想从头来一次加 `--fresh`，或者换个卷名。
 
 ## 许可证
 
