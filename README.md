@@ -109,11 +109,14 @@ python -m venv .venv
 
 > 用 Notebook 的话，把 Jupyter 内核指到这个 `.venv`（`main.ipynb` 里记录的内核名是 `.venv (3.9.7)`）。
 
-自检（截一张整屏，打印识别到的题卡位置，不改动任何数据）：
+自检（截一张整屏，打印识别到的题卡位置和题目编号，不改动任何数据）：
 
 ```bash
-python main.py probe
+python main.py
+# 进菜单后选 7) 调试：看当前画面的切题结果
 ```
+
+> 只会在 `resources/row_pngs/` 下多存一张 `_probe.png`，方便对照着看切题准不准。
 
 ---
 
@@ -147,31 +150,56 @@ python main.py probe
 
 ## 快速开始
 
-### 方式一：命令行（`main.py`）
+### 方式一：交互菜单（`main.py`）
 
 ```bash
-python main.py                  # 全套：截图 -> OCR -> Word -> 核对
-python main.py capture          # 只截图（会提示你把试卷滑到每个题型的开头）
-python main.py capture -t 选择题 # 只截某一种题型
-python main.py paper -n 期中卷   # 混合试卷：整卷一次滚到底，按顺序号存图
-python main.py ocr              # 只做文字提取
-python main.py ocr -n 期中卷     # 混合试卷的文字提取
-python main.py word             # 只生成 Word
-python main.py word -n 期中卷    # 混合试卷导 Word
-python main.py check            # 只打印产物统计（分题型 + 混合试卷）
-python main.py probe            # 调试：截整屏、打印题卡位置和题目编号
+python main.py
 ```
 
-`capture` 会在每个题型开始前停下等回车（脚本只会往下截）：
+进来先看到一屏状态（截图通道、各题型已有多少张图、每一卷的图 / txt / Word），然后按数字选：
 
 ```
-把模拟器里的试卷滑到「选择题」开头，回车开始截图：
+==============================================================
+ 数苑校园试卷提取
+ 截图通道：adb
+--------------------------------------------------------------
+ 分题型：分析题 78 · 画图题 84 · 计算题 136 · 选择题 567
+ 整卷：  期中卷（图 23 / txt 23 / Word 已生成）
+==============================================================
+
+  1) 整卷：采集 + 文字 + Word + 核对
+  2) 整卷：只采集
+  3) 单题型：采集
+  4) 文字提取（OCR）
+  5) 导出 Word
+  6) 检查产物
+  7) 调试：看当前画面的切题结果
+  0) 退出
+
+请选择：
 ```
 
-题型列表与顺序写在 `main.py` 顶部的 `PNG_TYPES` 里，按自己的试卷改即可。
+| 选项 | 做什么 | 会问你什么 |
+|---|---|---|
+| 1 | 整卷一条龙：采集 → 文字 → Word → 核对 | 卷名、题量 |
+| 2 | 整卷只采集 | 卷名、题量 |
+| 3 | 单题型采集（可选连 OCR + Word） | 题型（含「全部依次」）、题量，采完问要不要继续 OCR / Word |
+| 4 | 文字提取 | 范围：全部题型 / 指定题型 / 某一卷 |
+| 5 | 导出 Word | 同上 |
+| 6 | 检查产物 | — |
+| 7 | 调试：截一张、打印题卡位置和题目编号 | — |
 
-> `pages` 是题量上限（默认 10）。试卷题量很大时记得给够，例如
-> `python main.py capture -p 600`；不够会在截到上限时停下，日志里会提示 `已达到 pages=N`。
+约定：
+
+- **题量默认 10**：直接回车就用 10，也可以手动输入（整卷题多，记得给大一点，比如 200）；
+- 采集前程序会停下，等你把模拟器里的试卷滑到对应位置再回车；输入 `q` 取消；
+- 卷名可以直接输入新的，直接回车就沿用上一次用过的卷名；已有卷子会先列出来；
+- 输入 `0` 返回上一级，主菜单再输 `0` 退出；`Ctrl+C` 只取消当前操作，不会退出程序；
+- 开着中文输入法也能按数字（全角 `１` 等同于 `1`）。
+
+题型列表与顺序写在 [`src/common/const.py`](src/common/const.py) 的 `PNG_TYPES` 里，按自己的试卷改即可。
+
+> 题量上限截到数额就会停，日志里会提示 `已达到 pages=N`；整卷题多时记得给够。
 
 > 截图过程会实时打印「已保存 选择题\273.png」「编号从 273 直接跳到 275，中间可能有题没截到」
 > 这类信息，跑完还会汇总保存数量和跳过的题号，方便对照检查。
@@ -180,18 +208,20 @@ python main.py probe            # 调试：截整屏、打印题卡位置和题�
 
 一份卷子里选择题、分析题、计算题混在一起时，不用分次截，也不用手动滑到每个题型的开头：
 
-```bash
-python main.py paper -n 期中卷          # 整卷，pages 默认 2000（截到底会自己停）
-python main.py paper -n 期中卷 -p 30    # 先短跑 30 道
-python main.py paper -n 期中卷 --fresh  # 开跑前先清空该卷文件夹里的旧图
+```
+python main.py
+# 1) 整卷：采集 + 文字 + Word + 核对   ← 一条龙（推荐，跑完自动统计）
+# 2) 整卷：只采集                      ← 只截图，之后用 4 / 5 单独做
 ```
 
-三步都用同一个卷名，产物都落在这一卷自己的目录里：
+选 1 之后只要回答两个问题：卷名（回车沿用上次的）、题量（回车=10，整卷记得给大）；
 
-```bash
-python main.py paper -n 期中卷   # ① 截图 -> row_paper/期中卷/pngs/1.png …
-python main.py ocr   -n 期中卷   # ② 文字 -> row_paper/期中卷/txts/1.txt …
-python main.py word  -n 期中卷   # ③ Word -> word_output/期中卷.docx
+两步/三步分着跑也行，卷名填同一个即可，产物都落在这一卷自己的目录里：
+
+```
+① 采集     -> row_paper/期中卷/pngs/1.png …
+② 文字提取 -> row_paper/期中卷/txts/1.txt …      （菜单 4，选「某一卷」）
+③ 导出 Word -> word_output/期中卷.docx           （菜单 5，选「某一卷」）
 ```
 
 也可以直接在 py 文件里调：
@@ -205,7 +235,7 @@ GetPaperScreenshot.save(paper="期中卷", pages=2000)
 
 和分题型截图只有两处不同：
 
-| | 分题型（`capture`） | 混合试卷（`paper`） |
+| | 分题型（菜单 3） | 混合试卷（菜单 1 / 2） |
 |---|---|---|
 | 文件名 | 题目编号（`273.png`） | **顺序号**（`1.png`、`2.png` …） |
 | 目录 | `row_pngs/<题型>/` | `row_paper/<卷名>/pngs/` |
@@ -214,15 +244,10 @@ GetPaperScreenshot.save(paper="期中卷", pages=2000)
 
 滚动对齐、到底判定、防「长按选中题干」这些和分题型完全共用一套逻辑。
 
-> `pages` 是题量上限：截到底会自己停，但给太小会提前结束。整卷跑记得给够（默认 2000）。
+> `pages` 是题量上限：截到底会自己停，但给太小会提前结束。整卷跑记得手动给大（默认 10）。
 
 截完之后提取文字，思路和分题型完全一样（分段、公式标 `$...$`、公式/表格/图像打标签），
-只是读写目录换成卷子自己的：
-
-```bash
-python main.py ocr -n 期中卷        # 读 pngs/，写 txts/
-```
-
+只是读写目录换成卷子自己的（菜单 4 → 选「某一卷」）：
 ```python
 from src.modules.datapreparation.paper_text_extraction import PaperTextExtraction
 
@@ -239,12 +264,7 @@ row_paper/期中卷/
 同一道题换标签重跑时，旧标签的 txt 会被删掉（`1_table.txt` → 跑成 `1.txt` 后不会并存）。
 `txts` 里带标签的题同样会在结束时列出来，提示对着原图核对。
 
-最后导出 Word，文件名就是卷名：
-
-```bash
-python main.py word -n 期中卷        # -> resources/word_output/期中卷.docx
-```
-
+最后导出 Word（菜单 5 → 选「某一卷」），文件名就是卷名：
 ```python
 from src.modules.process.paper_word_builder import PaperWordBuilder
 
@@ -254,7 +274,7 @@ PaperWordBuilder.save(paper="期中卷")
 规则和分题型一致：带 `_formula` / `_table` / `_image` 的题贴原图，纯文字题转成正文，
 每道题前面带「第N题」（N 就是图片的顺序号）。
 
-`python main.py check` 也会按卷统计：
+菜单 6) 检查产物 也会按卷统计：
 
 ```
 混合试卷：
@@ -274,11 +294,19 @@ PaperWordBuilder.save(paper="期中卷")
 
 ### 典型一次运行
 
-1. 模拟器打开试卷预览，滑到「选择题」开头；
-2. `python main.py capture`，按提示逐个题型回车；
-3. `python main.py ocr`，跑完看提示里「含公式、建议核对」的列表；
-4. `python main.py word`；
-5. `python main.py check` 核对数量，然后打开 `resources/word_output/` 里的 docx。
+**整卷（一份卷子混着好几类题型）**
+
+1. 模拟器打开试卷预览，滑到**最上面**；
+2. `python main.py` → 选 `1`（一条龙）；
+3. 卷名回车（比如 `期中卷`）、题量填 `200`、回车开始；
+4. 跑完自动接着做文字、Word 和统计，直接看最后打印的核对结果即可。
+
+**分题型**
+
+1. 滑到「选择题」开头；
+2. `python main.py` → 选 `3`（单题型）→ 选 `1`（选择题）→ 题量 → 回车开始；
+3. 采完会问「继续提取文字并导出 Word？」，按 `y` 就一路做完；
+4. 换下一个题型重复第 1~2 步（或者一开始就选「全部依次」）。
 
 ---
 
@@ -322,7 +350,7 @@ resources/
 - 编号不连续就说明中间有题没截到，日志里会有 `编号从 N 直接跳到 M` 的提示；
 - 带 `_formula` / `_table` / `_image` 后缀的题，在 Word 里是**题目原图**（等比缩放铺满正文宽度），因为公式、表格、图形转成文字都会丢内容；
 - 不带后缀的纯文字题是**可编辑文字**，每个选项单独一段；
-- `row_txt` 里带后缀的题，就是需要重点核对的那批（`main.py check` 会分别统计三类数量）。
+- `row_txt` 里带后缀的题，就是需要重点核对的那批（菜单 6) 检查产物 会分别统计三类数量）。
 
 单题 txt 的样子：
 
@@ -354,6 +382,8 @@ D 都不会
 | `CARD_SAFE_TOP` | `130` | 画面顶部被 App 标题栏挡住的高度 |
 | `TARGET_HEADER_TOP` | `220` | 翻页后希望下一题标题行停在的位置 |
 | `SAME_RATIO` | `0.008` | 兜底去重阈值：只有「题目N」读不出来时才用指纹比较 |
+| `PNG_TYPES` | 选择题/分析题/画图题/计算题 | 菜单里列出的题型，按自己的试卷改 |
+| `DEFAULT_PAGES` | `10` | 每次采集的默认题量上限（回车即用，可手动输入） |
 | `PAPER_FOLDER` | `row_paper` | 混合试卷的输出目录名（`resources/row_paper/<卷名>/pngs/`） |
 | `PAPER_PNGS` | `pngs` | 卷子目录下放图片的子目录名 |
 | `PAPER_TXTS` | `txts` | 卷子目录下放文字的子目录名 |
@@ -379,7 +409,7 @@ D 都不会
 ## 常见问题
 
 **Q：截图位置不对、漏题、切到半道题？**
-先跑 `python main.py probe` 看整屏、题卡位置和读出来的题目编号。常见原因：
+先在主菜单选 `7) 调试`——截一张整屏，打印题卡位置和读出来的题目编号。常见原因：
 
 - 画面顶部标题栏更高/更矮 → 调 `CARD_SAFE_TOP`；
 - 翻页后题目位置偏移 → 调 `TARGET_HEADER_TOP`；
@@ -498,7 +528,7 @@ cd "…\MuMuPlayer\nx_device\15.0\shell"
 
 ```
 Sciyardcampus_file_export/
-├── main.py                        # 命令行入口（截图 / OCR / Word / 核对）
+├── main.py                        # 交互式菜单入口（只有 start()）
 ├── main.ipynb                     # 同样流程的 Notebook 版本
 ├── reqiurements.txt               # 依赖
 ├── resources/                     # 产物（不进版本库）
@@ -521,11 +551,18 @@ Sciyardcampus_file_export/
 │       ├── datapreparation/
 │       │   ├── screenshot.py      # GetScreenshot：按题型截图流水线
 │       │   ├── paper_screenshot.py # GetPaperScreenshot：混合试卷截图流水线
-│       │   └── text_extraction.py # TextExtraction：OCR 流水线
-│       └── process/
-│           └── word_builder.py    # WordBuilder：生成题库 Word
+│       │   ├── text_extraction.py # TextExtraction：OCR 流水线
+│       │   └── paper_text_extraction.py # PaperTextExtraction：混合试卷 OCR
+│       ├── process/
+│       │   ├── word_builder.py    # WordBuilder：生成题库 Word
+│       │   └── paper_word_builder.py # PaperWordBuilder：混合试卷 Word
+│       └── interactions/          # 交互菜单（main.py 的实现都在这儿）
+│           ├── console.py         #   Console：读数字 / 是否 / 选项，q 取消
+│           ├── status.py          #   Status：菜单顶部状态、检查产物报表
+│           ├── actions.py         #   Actions：采集 / 提取文字 / 导出 Word
+│           └── menus.py           #   Menus：每个菜单项的问答流程与分发
 └── test/
-    ├── test_1.py … test_7.py      # 各模块的手工测试脚本
+    ├── test_1.py … test_6.py      # 各模块的手工测试脚本
 ```
 
 ### 模块职责
@@ -543,6 +580,10 @@ Sciyardcampus_file_export/
 | `PaperTextExtraction` | 混合试卷的 OCR：`row_paper/<卷名>/pngs` → `txts`，文件名是顺序号 | `save()`、`write()` |
 | `WordBuilder` | 按题型合成 Word：带标签的题贴图、纯文本题转段落 | `save()`、`build()`、`add_picture()` |
 | `PaperWordBuilder` | 混合试卷合成 Word：`row_paper/<卷名>/txts` → `word_output/<卷名>.docx` | `save()`、`build()`、`indexes()` |
+| `Console` | 终端输入原语：读数字 / 是否 / 选项，回车用默认值、q 取消 | `ask_int()`、`ask_yes()`、`choose()`、`pause()` |
+| `Status` | 只读统计与展示：菜单顶部一屏、检查产物报表 | `banner()`、`report()`、`count_pngs()` |
+| `Actions` | 菜单选中后真正干活：采集 / 提取文字 / 导出 Word | `capture()`、`capture_paper()`、`extract_text()`、`build_word()` |
+| `Menus` | 菜单项清单、每一项的问答流程、按键分发 | `show()`、`run()`、`paper()`、`single_type()` |
 
 ### 数据流
 
@@ -585,7 +626,7 @@ QuestionCard.footer_type()    ──► 题型名（"… | 单选题 | 易" 的�
 ### 扩展点
 
 - **换 OCR 引擎**：`TextExtraction.write()` 里只有一处 `pytesseract.image_to_string(...)`，替换成自己的 `ocr(image) -> str` 即可；如果新引擎直接吐 LaTeX（Mathpix / 多模态模型），记得跳过 `mark_math()`，否则 `$...$` 会被重复包裹。
-- **加题型**：截图时传新的 `png_type`（会自动建目录），再跑 OCR 和 Word；`main.py` 里记得加进 `PNG_TYPES`。
+- **加题型**：截图时传新的 `png_type`（会自动建目录），再跑 OCR 和 Word；记得把新题型加进 [`const.py`](src/common/const.py) 的 `PNG_TYPES`，菜单里才会出现。
 - **改 Word 版式**：`WordBuilder.setup()` 管页面/字体，`add_title()` / `add_text()` / `add_picture()` 管每题内容。
 - **适配别的 App 版式**：识别锚点集中在 `QuestionCard`（红字标题 `CARD_RED`、正文亮度 `CARD_DARK_LUM`、页脚亮度 `CARD_FOOTER_LUM` 与最小高度 `CARD_FOOTER_MIN`、顶部遮挡 `CARD_SAFE_TOP`）。
 - **调试单个环节**：`GetScreenshot.probe()` 看切题；`QuestionCard.split(frame)` 可以单独喂任意截图。
@@ -599,9 +640,6 @@ QuestionCard.footer_type()    ──► 题型名（"… | 单选题 | 易" 的�
 | `test/test_3.py` | 截图主流程 |
 | `test/test_4.py` | OCR 主流程 |
 | `test/test_5.py` | Word 生成 |
-| `test/test_7.py` | 混合试卷截图（`row_paper`） |
-| `test/test_8.py` | 混合试卷文字提取（`row_paper/<卷名>/txts`） |
-| `test/test_9.py` | 混合试卷导出 Word（`word_output/<卷名>.docx`） |
 
 > `resources/` 不进版本库，测试前需要有对应产物，或者先跑一遍截图。
 
@@ -618,7 +656,8 @@ QuestionCard.footer_type()    ──► 题型名（"… | 单选题 | 易" 的�
 7. **混合试卷的 Word 是按顺序号排的**：文档里写「第1题、第2题…」，对应 `pngs/1.png`，
    不是试卷页面上印的题号（那个题号在整卷里会重复）；
 8. **混合卷的文件名是顺序号**：重跑会从 `1.png` 覆盖，中间新增或删减会让后面的序号整体错位；
-   想从头来一次加 `--fresh`，或者换个卷名。
+   开跑前程序会问要不要先清空该卷的旧图，或者换个卷名；
+9. **菜单是交互式的**：不再支持命令行参数，需要脚本化调用的话直接 import 对应类（见「快速开始」里的 py 示例）。
 
 ## 许可证
 
