@@ -83,7 +83,7 @@
 | 项目 | 要求 |
 |---|---|
 | 操作系统 | Windows 10 / 11（代码用到了 Win32 接口：DPI 感知、读取窗口客户区） |
-| Python | 3.9（开发时用的 `.venv`，克隆后需自行创建） |
+| Python | 3.9.7（开发时用的 `.venv`，克隆后需自行创建） |
 | 模拟器 | 推荐 **MuMu 模拟器 12**，画面分辨率 **1600×900**、DPI 240、横屏 |
 | OCR | Tesseract 5.x，需要 `chi_sim`、`eng` 语言包 |
 | 依赖 | 见 [`reqiurements.txt`](reqiurements.txt)（`pytesseract`、`PyAutoGUI`、`PyGetWindow`、`numpy`、`pillow`、`python-docx`、`lxml`、`pywin32`） |
